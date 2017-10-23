@@ -9,6 +9,8 @@ from sqlite3 import Error
 import glob
 import pandas as pd
  
+import datetime
+
 def create_connection(db_file):
     """ create a database connection to a SQLite database """
     try:
@@ -134,39 +136,63 @@ def convert_period(stock_data, period_type):
 
 def recur_wkly(db_file):
     
-        ma_list = [5, 10, 30] #Moving average period
-        try:
-            conn = sqlite3.connect(db_file)
-            cur = conn.cursor()
-            rows = cur.execute("SELECT distinct STOCK_CODE FROM TRADE_RAW_DAILY;").fetchall()
-            
-            cur.close()
+    ma_list = [5, 10, 30] #Moving average period
+        
+#Retrive last monday and Friday
+    current_time = datetime.datetime.now()
+
+    if current_time.isoweekday() == 5:
+        friday = current_time.date()
+    elif current_time.isoweekday() == 6:  
+        friday = current_time.date() - datetime.timedelta(days=1)    
+    # get friday, one week ago
+    else:
+        friday = (current_time.date() - datetime.timedelta(days=current_time.weekday())
+        + datetime.timedelta(days=4, weeks=-1))
+    
+    print(friday)
+        
+    monday = friday - datetime.timedelta(days=4)    
+
+    print(monday)   
+
+    
+    try:
+        conn = sqlite3.connect(db_file)
+        cur = conn.cursor()
+        rows = cur.execute("SELECT distinct STOCK_CODE FROM TRADE_RAW_DAILY;").fetchall()
+        
+        cur.close()
 
 #Process each stock code
-            for row in rows:
-                each_stock = "select * from TRADE_RAW_DAILY where STOCK_CODE = " + "\"" + row[0] + "\""
-                stock_data = pd.read_sql_query(each_stock, conn)
-              
+        for row in rows:
+            each_stock = "select * from TRADE_RAW_DAILY where STOCK_CODE = " + "\"" + row[0] + "\""
+            stock_data = pd.read_sql_query(each_stock, conn)
+          
 #Data frame read from DB, although it is stored in datetime type, it has to be converted                                
-                stock_data['TRADE_DATE'] = pd.to_datetime(stock_data['TRADE_DATE'])
-                stock_data.set_index('TRADE_DATE', inplace=True)
-
-#Start converting daily trade data into weekly
-#W, M, Q, 5min, 12D                
-#Compute weekly MA
-                weekly_data = convert_period(stock_data, 'W')
-                
-                for ma in ma_list:
-                    #weekly_data['MA_' + str(ma)] = pd.rolling_mean(weekly_data['CLOSE'], ma)
-                    weekly_data['MA_' + str(ma)] = weekly_data['CLOSE'].rolling(window=ma, center=False).mean()
-
-                print(weekly_data.head())
-                pd.DataFrame.to_sql(weekly_data, con=conn, name='TRADE_WEEKLY', schema=None, if_exists='append', index=False, index_label=False, chunksize=None, dtype=None)       
+            stock_data['TRADE_DATE'] = pd.to_datetime(stock_data['TRADE_DATE'])
             
-        except Error as e:
-            print(e)
-        finally:
-            conn.close()
+            stock_data = stock_data[(stock_data.TRADE_DATE >= monday) & (stock_data.TRADE_DATE <= friday)]
+            
+            stock_data.set_index('TRADE_DATE', inplace=True)
+            
+            #Need to sort this by trade_date, as the latest entries always at the bottom
+            #print(stock_data.head())
+
+#Start converting daily trade data into weekly + MA            
+            weekly_data = convert_period(stock_data, 'W')
+           
+            for ma in ma_list:
+                #weekly_data['MA_' + str(ma)] = pd.rolling_mean(weekly_data['CLOSE'], ma)
+                weekly_data['MA_' + str(ma)] = weekly_data['CLOSE'].rolling(window=ma, center=False).mean()
+
+            print(weekly_data.head())
+            pd.DataFrame.to_sql(weekly_data, con=conn, name='TRADE_WEEKLY', schema=None, if_exists='append', index=False, index_label=False, chunksize=None, dtype=None)       
+       
+    except Error as e:
+        print(e)
+    finally:
+        conn.close()
 
 def recur_monthly(db_file):
     
@@ -210,7 +236,8 @@ if __name__ == '__main__':
 #Load daily csv    
     #load_daily_csv("D:\\_STOCKDB\pythonsqlite_1.db")
     
-    compute_wkly_monthly("D:\\_STOCKDB\pythonsqlite_1.db")
+    #compute_wkly_monthly("D:\\_STOCKDB\pythonsqlite_1.db")
+    recur_wkly("D:\\_STOCKDB\pythonsqlite_1.db")
 """    
 Python can only create db file, thus the foler needs to be created first
 
