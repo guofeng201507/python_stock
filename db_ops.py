@@ -8,8 +8,10 @@ import sqlite3
 from sqlite3 import Error
 import glob
 import pandas as pd
- 
+import shutil
 import datetime
+
+from dateutil.relativedelta import relativedelta
 
 def create_connection(db_file):
     """ create a database connection to a SQLite database """
@@ -57,11 +59,15 @@ def recur_daily_csv(db_file):
     path =r'C:\Users\guof\Desktop\Stock Research\daily' # use your path
     allFiles = glob.glob(path + "/*.csv")
     
+    #path_bkup =r'C:\Users\guof\Desktop\Stock Research\daily_bkup' # use your path
+
+    
     try:
         conn = sqlite3.connect(db_file)
                 
         for file_ in allFiles:
-#Encoding set as 'GBK' for chinese character header            
+#Encoding set as 'GBK' for chinese character header           
+            #print(type(file_))
             df = pd.read_csv(file_, header = 0, encoding = 'GBK', parse_dates=[1])
             df.columns  = ["STOCK_CODE", "TRADE_DATE", "OPEN", "HIGH", "LOW", "CLOSE", "PRE_CLOSE", "CHANGE", "VOLUME","VALUE"]
             print('This is the format of DF from CSV')
@@ -70,6 +76,9 @@ def recur_daily_csv(db_file):
 #All the follow up loading.            
             pd.DataFrame.to_sql(df, con=conn, name='TRADE_RAW_DAILY', schema=None, if_exists='append', index=False, index_label=False, chunksize=None, dtype=None)            
 
+#move daily file to backup folder
+            file_bkup = file_.replace("daily", "daily_bkup")
+            shutil.move(file_, file_bkup)
     except Error as e:
         print(e)
     finally:
@@ -177,7 +186,7 @@ def recur_wkly(db_file):
             stock_data.set_index('TRADE_DATE', inplace=True)
             
             #Need to sort this by trade_date, as the latest entries always at the bottom
-            #print(stock_data.head())
+            print(stock_data)
 
 #Start converting daily trade data into weekly + MA            
             weekly_data = convert_period(stock_data, 'W')
@@ -197,6 +206,16 @@ def recur_wkly(db_file):
 def recur_monthly(db_file):
     
         ma_list = [5, 10, 30] #Moving average period
+        
+        #Retrive first day and last day of previous month
+        today = datetime.date.today()
+    
+        first = today.replace(day=1)
+        last_d_pre_m = first - datetime.timedelta(days=1)
+        first_d_pre_m = first - relativedelta(months=1)
+        print(first_d_pre_m)
+        print(last_d_pre_m)
+                
         try:
             conn = sqlite3.connect(db_file)
             cur = conn.cursor()
@@ -210,13 +229,15 @@ def recur_monthly(db_file):
                 stock_data = pd.read_sql_query(each_stock, conn)
 #Data frame read from DB, although it is stored in datetime type, it has to be converted                                
                 stock_data['TRADE_DATE'] = pd.to_datetime(stock_data['TRADE_DATE'])
+                
+                stock_data = stock_data[(stock_data.TRADE_DATE >= first_d_pre_m) & (stock_data.TRADE_DATE <= last_d_pre_m)]
+                
                 stock_data.set_index('TRADE_DATE', inplace=True)
         
 #Compute monthly MA
                 
                 monthly_data = convert_period(stock_data, 'M')
                 for ma in ma_list:
-                    #weekly_data['MA_' + str(ma)] = pd.rolling_mean(weekly_data['CLOSE'], ma)
                     monthly_data['MA_' + str(ma)] = monthly_data['CLOSE'].rolling(window=ma, center=False).mean()
                 print(monthly_data.head())
                 pd.DataFrame.to_sql(monthly_data, con=conn, flavor=None, name='TRADE_MONTHLY', schema=None, if_exists='append', index=False, index_label=False, chunksize=None, dtype=None)       
@@ -226,6 +247,10 @@ def recur_monthly(db_file):
         finally:
             conn.close()
 
+
+
+
+
 if __name__ == '__main__':
     
 #    create_connection("C:\\Users\guof\AnacondaProjects\proj1\db\pythonsqlite_1.db")
@@ -233,11 +258,18 @@ if __name__ == '__main__':
     #load_all_csv("D:\\_STOCKDB\pythonsqlite_1.db", False)
 #Real run     
     #load_all_csv("D:\\_STOCKDB\pythonsqlite_1.db", False)
-#Load daily csv    
-    #load_daily_csv("D:\\_STOCKDB\pythonsqlite_1.db")
+
     
     #compute_wkly_monthly("D:\\_STOCKDB\pythonsqlite_1.db")
+    
+#Operational functions
+    #Load daily csv    
+    #recur_daily_csv("D:\\_STOCKDB\pythonsqlite_1.db")
+    
     recur_wkly("D:\\_STOCKDB\pythonsqlite_1.db")
+    
+    #recur_monthly("D:\\_STOCKDB\pythonsqlite_1.db")
+    
 """    
 Python can only create db file, thus the foler needs to be created first
 
