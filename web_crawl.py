@@ -6,9 +6,9 @@ Created on Sat Jun 24 09:32:54 2017
 """
 
 from bs4 import BeautifulSoup
-import urllib2
+import urllib.request as ur
 
-webpage = urllib2.urlopen('http://en.wikipedia.org/wiki/Main_Page')
-soup = BeautifulSoup(webpage,'html.parser')
+webpage = ur.urlopen('http://en.wikipedia.org/wiki/Main_Page')
+soup = BeautifulSoup(webpage, 'html.parser')
 for anchor in soup.find_all('a'):
     print(anchor.get('href', '/'))
